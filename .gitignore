@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Data (ne pas pousser les données sur Git)
+data/json/
+data/raw/
+*.csv
+
+# Docker
+docker-compose.override.yml
+
+# MongoDB
+mongodb_data/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

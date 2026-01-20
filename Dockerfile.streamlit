@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Copier requirements
+COPY requirements.txt .
+
+# Installer les dépendances
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier le code
+COPY streamlit/ ./streamlit/
+
+# Exposer le port
+EXPOSE 8501
+
+# Variable d'environnement
+ENV MONGODB_URI=mongodb://admin:admin123@localhost:27017/
+
+# Commande de démarrage
+CMD ["streamlit", "run", "streamlit/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
