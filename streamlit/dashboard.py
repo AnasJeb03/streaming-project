@@ -169,8 +169,8 @@ def show_overview(invoices):
     st.subheader("📋 Recent Invoices")
     
     recent_invoices = sorted(invoices, 
-                            key=lambda x: x.get('received_at', ''), 
-                            reverse=True)[:10]
+                    key=lambda x: str(x.get('_id', '')), 
+                    reverse=True)[:10]
     
     df_recent = pd.DataFrame([
         {
