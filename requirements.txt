@@ -1,18 +1,9 @@
-# API Dependencies
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-
-# Kafka
+fastapi==0.115.0
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
 kafka-python-ng==2.2.3
-
-# MongoDB
 pymongo==4.16.0
-
-# Streamlit
-streamlit==1.29.0
-
-# Utilities
+streamlit==1.40.2
 python-dotenv==1.0.0
-pandas
-requests
+pandas==2.2.3
+requests==2.32.3
