@@ -5,7 +5,7 @@ from datetime import datetime
 import logging
 import os
 from dotenv import load_dotenv
-from .kafka_producer import get_kafka_producer
+from kafka_producer import get_kafka_producer
 
 # Charger les variables d'environnement
 load_dotenv()

@@ -1,37 +1,53 @@
 version: '3.8'
 
 services:
+  # Zookeeper - Required for Kafka
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
     container_name: zookeeper
+    ports:
+      - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
     networks:
       - streaming-network
+    healthcheck:
+      test: nc -z localhost 2181 || exit -1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
+  # Kafka - Message Broker
   kafka:
     image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
       - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
     networks:
       - streaming-network
+    healthcheck:
+      test: kafka-topics --bootstrap-server kafka:9092 --list
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+  # MongoDB - Database
   mongodb:
     image: mongo:7.0
     container_name: mongodb
@@ -43,14 +59,22 @@ services:
       MONGO_INITDB_DATABASE: invoices_db
     volumes:
       - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     networks:
       - streaming-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Mongo Express - MongoDB Web UI
   mongo-express:
-    image: mongo-express:latest
+    image: mongo-express:1.0.0
     container_name: mongo-express
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     ports:
       - "8081:8081"
     environment:
@@ -61,26 +85,68 @@ services:
     networks:
       - streaming-network
 
-  spark:
-    image: apache/spark:3.5.0
-    container_name: spark-master
-    user: root
-    environment:
-      - SPARK_MODE=master
-    ports:
-      - "8080:8080"  # Spark Master Web UI
-      - "7077:7077"  # Spark Master
-      - "4040:4040"  # Spark Application UI
-    volumes:
-      - ./spark:/opt/spark_jobs
-    command: >
-      bash -c "pip install pyspark==3.5.0 &&
-               /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
+  # FastAPI - Invoice API
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: invoice-api
     depends_on:
-      - kafka
-      - mongodb
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      API_PORT: 8000
+    volumes:
+      - ./api:/app
     networks:
       - streaming-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Apache Spark - Streaming Processor
+  spark:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark-streaming
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MONGODB_URL: mongodb://admin:admin123@mongodb:27017/
+    volumes:
+      - ./spark:/app
+    networks:
+      - streaming-network
+    command: >
+      spark-submit
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.2.0
+      --master local[*]
+      /app/spark_streaming_mongodb.py
+
+  # Streamlit Dashboard
+  dashboard:
+    build:
+      context: ./streamlit
+      dockerfile: Dockerfile
+    container_name: streamlit-dashboard
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      MONGODB_URL: mongodb://admin:admin123@mongodb:27017/
+    volumes:
+      - ./streamlit:/app
+    networks:
+      - streaming-network
+    command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
 
 networks:
   streaming-network:

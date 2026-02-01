@@ -1,6 +1,7 @@
 import streamlit as st
 import pymongo
 import pandas as pd
+import os  # ← FIXED: Added this import
 from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
@@ -17,14 +18,21 @@ st.set_page_config(
 def get_mongodb_client():
     """Connexion à MongoDB"""
     try:
-        client = pymongo.MongoClient("mongodb://admin:admin123@localhost:27017/")
+        # FIXED: Better environment variable handling
+        mongo_url = os.getenv(
+            'MONGODB_URL', 
+            'mongodb://admin:admin123@localhost:27017/'
+        )
+        client = pymongo.MongoClient(mongo_url)
+        # Test connection
+        client.server_info()
         return client
     except Exception as e:
         st.error(f"Erreur de connexion à MongoDB: {str(e)}")
         return None
 
 # Récupérer les données depuis MongoDB
-@st.cache_data(ttl=5)  # Cache pendant 5 secondes
+@st.cache_data(ttl=5)
 def get_invoices_data():
     """Récupère toutes les invoices depuis MongoDB"""
     client = get_mongodb_client()
@@ -55,24 +63,20 @@ def get_invoice_by_number(invoice_no):
         st.error(f"Erreur: {str(e)}")
         return None
 
-# Interface principale
 def main():
     st.title("📊 Invoice Streaming Dashboard")
     st.markdown("---")
     
-    # Sidebar
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Choose a page:",
         ["Overview", "Invoice Details", "Analytics", "Raw Data"]
     )
     
-    # Bouton de refresh
     if st.sidebar.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
     
-    # Charger les données
     invoices = get_invoices_data()
     
     if not invoices:
@@ -80,54 +84,39 @@ def main():
         st.info("Start the API and send invoices using the client script.")
         return
     
-    # PAGE: Overview
     if page == "Overview":
         show_overview(invoices)
-    
-    # PAGE: Invoice Details
     elif page == "Invoice Details":
         show_invoice_details(invoices)
-    
-    # PAGE: Analytics
     elif page == "Analytics":
         show_analytics(invoices)
-    
-    # PAGE: Raw Data
     elif page == "Raw Data":
         show_raw_data(invoices)
 
 def show_overview(invoices):
-    """Page d'aperçu général"""
     st.header("📈 Overview")
     
-    # Calculer les métriques
     total_invoices = len(invoices)
     total_revenue = sum(inv.get('InvoiceTotal', 0) for inv in invoices)
     total_items = sum(len(inv.get('Items', [])) for inv in invoices)
     unique_customers = len(set(inv.get('CustomerID') for inv in invoices))
     unique_countries = len(set(inv.get('Country') for inv in invoices))
     
-    # Afficher les métriques
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.metric("Total Invoices", f"{total_invoices:,}")
-    
     with col2:
         st.metric("Total Revenue", f"${total_revenue:,.2f}")
-    
     with col3:
         st.metric("Total Items", f"{total_items:,}")
-    
     with col4:
         st.metric("Unique Customers", f"{unique_customers:,}")
-    
     with col5:
         st.metric("Countries", f"{unique_countries}")
     
     st.markdown("---")
     
-    # Graphiques
     col1, col2 = st.columns(2)
     
     with col1:
@@ -164,7 +153,6 @@ def show_overview(invoices):
                         color_continuous_scale='Greens')
             st.plotly_chart(fig, use_container_width=True)
     
-    # Dernières invoices
     st.markdown("---")
     st.subheader("📋 Recent Invoices")
     
@@ -187,10 +175,8 @@ def show_overview(invoices):
     st.dataframe(df_recent, use_container_width=True)
 
 def show_invoice_details(invoices):
-    """Page de détails d'une invoice"""
     st.header("🔍 Invoice Details")
     
-    # Sélection de l'invoice
     invoice_numbers = [inv.get('InvoiceNo') for inv in invoices]
     selected_invoice = st.selectbox("Select an Invoice:", invoice_numbers)
     
@@ -198,7 +184,6 @@ def show_invoice_details(invoices):
         invoice = get_invoice_by_number(selected_invoice)
         
         if invoice:
-            # Informations générales
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -215,7 +200,6 @@ def show_invoice_details(invoices):
             
             st.markdown("---")
             
-            # Tableau des items
             st.subheader("📦 Items")
             items = invoice.get('Items', [])
             
@@ -229,10 +213,8 @@ def show_invoice_details(invoices):
                 st.info("No items found for this invoice")
 
 def show_analytics(invoices):
-    """Page d'analytics avancées"""
     st.header("📊 Advanced Analytics")
     
-    # Préparer les données
     df = pd.DataFrame([
         {
             'InvoiceNo': inv.get('InvoiceNo'),
@@ -245,14 +227,12 @@ def show_analytics(invoices):
         for inv in invoices
     ])
     
-    # Distribution des montants
     st.subheader("💰 Invoice Amount Distribution")
     fig = px.histogram(df, x='InvoiceTotal', nbins=50,
                       title='Distribution of Invoice Amounts',
                       labels={'InvoiceTotal': 'Invoice Total ($)'})
     st.plotly_chart(fig, use_container_width=True)
     
-    # Analyse par pays
     st.subheader("🌍 Revenue by Country")
     country_stats = df.groupby('Country').agg({
         'InvoiceTotal': 'sum',
@@ -274,10 +254,8 @@ def show_analytics(invoices):
         st.plotly_chart(fig, use_container_width=True)
 
 def show_raw_data(invoices):
-    """Page des données brutes"""
     st.header("📄 Raw Data")
     
-    # Convertir en DataFrame
     df = pd.DataFrame([
         {
             'InvoiceNo': inv.get('InvoiceNo'),
@@ -291,7 +269,6 @@ def show_raw_data(invoices):
         for inv in invoices
     ])
     
-    # Filtres
     st.sidebar.subheader("Filters")
     
     countries = ['All'] + sorted(df['Country'].unique().tolist())
@@ -305,11 +282,9 @@ def show_raw_data(invoices):
     
     df = df[(df['InvoiceTotal'] >= min_total) & (df['InvoiceTotal'] <= max_total)]
     
-    # Affichage
     st.write(f"Showing {len(df)} invoices")
     st.dataframe(df, use_container_width=True)
     
-    # Download CSV
     csv = df.to_csv(index=False)
     st.download_button(
         label="📥 Download as CSV",
